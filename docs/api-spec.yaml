@@ -1,0 +1,252 @@
+openapi: 3.0.3
+info:
+  title: SpeechIt API
+  description: |
+    REST API for the SpeechIt TTS demo.
+    Converts text to speech using Google Gemini API (gemini-3.1-flash-tts-preview).
+    No authentication required. Rate limit: 10 requests/minute/IP.
+  version: 1.0.0
+  contact:
+    name: SpeechIt Team
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://speechit.example.com
+    description: Production server
+
+paths:
+  /api/voices:
+    get:
+      operationId: listVoices
+      summary: List available TTS voices
+      description: |
+        Returns the static list of voices available for synthesis.
+        The list is hardcoded and does not call the Gemini API.
+      tags:
+        - voices
+      responses:
+        "200":
+          description: Successful response with voice list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoicesResponse"
+              example:
+                voices:
+                  - Kore
+                  - Puck
+                  - Aoede
+                  - Charon
+                  - Fenrir
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: internal_server_error
+                message: An unexpected error occurred
+
+  /api/synthesize:
+    post:
+      operationId: synthesizeSpeech
+      summary: Synthesize text to speech
+      description: |
+        Converts the provided text to speech using the Gemini API
+        (model: gemini-3.1-flash-tts-preview) and streams the resulting
+        WAV audio directly to the client.
+
+        - Text is limited to approximately 6000 characters (8192 tokens).
+        - Rate limited to 10 requests per minute per IP address.
+        - Audio is NOT stored on the server; bytes are streamed inline.
+        - Response Content-Type is audio/wav.
+      tags:
+        - synthesis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SynthesizeRequest"
+            examples:
+              minimal:
+                summary: Minimal request (no style prompt)
+                value:
+                  text: Hello, world! This is SpeechIt.
+                  voice: Kore
+              with_style:
+                summary: Request with style prompt
+                value:
+                  text: Welcome to the future of voice synthesis.
+                  voice: Aoede
+                  style_prompt: Speak slowly and warmly, as if greeting an old friend.
+      responses:
+        "200":
+          description: |
+            Audio synthesized successfully.
+            Response body is raw WAV audio (PCM 24kHz/16-bit/mono).
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: audio/wav
+            Content-Disposition:
+              description: Suggested filename for download
+              schema:
+                type: string
+                example: attachment; filename="speechit.wav"
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "422":
+          description: |
+            Validation error. Possible causes:
+            - text is empty or missing
+            - text exceeds the character limit (~6000 chars)
+            - voice is not in the allowed list
+            - style_prompt exceeds 500 characters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                input_too_long:
+                  summary: Text exceeds limit
+                  value:
+                    error: input_too_long
+                    message: Text exceeds the maximum allowed length of 6000 characters
+                invalid_voice:
+                  summary: Voice not in allowed list
+                  value:
+                    error: invalid_voice
+                    message: "Voice 'Unknown' is not supported. Allowed values: Kore, Puck, Aoede, Charon, Fenrir"
+                text_empty:
+                  summary: Empty text
+                  value:
+                    error: text_required
+                    message: text field is required and must not be empty
+        "429":
+          description: Rate limit exceeded (10 requests/minute/IP)
+          headers:
+            Retry-After:
+              description: Number of seconds to wait before retrying
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: rate_limit_exceeded
+                message: Rate limit exceeded. Please wait 60 seconds before retrying.
+        "502":
+          description: |
+            Upstream Gemini API error.
+            The request was valid but the TTS API returned an error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: upstream_error
+                message: Gemini API returned an unexpected error. Please try again.
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: internal_server_error
+                message: An unexpected error occurred
+
+components:
+  schemas:
+    VoicesResponse:
+      type: object
+      required:
+        - voices
+      properties:
+        voices:
+          type: array
+          description: List of available voice names
+          items:
+            type: string
+            enum:
+              - Kore
+              - Puck
+              - Aoede
+              - Charon
+              - Fenrir
+          minItems: 1
+          example:
+            - Kore
+            - Puck
+            - Aoede
+            - Charon
+            - Fenrir
+
+    SynthesizeRequest:
+      type: object
+      required:
+        - text
+        - voice
+      properties:
+        text:
+          type: string
+          description: |
+            The text to synthesize. Must not be empty.
+            Maximum length: approximately 6000 characters (8192 tokens).
+          minLength: 1
+          maxLength: 6000
+          example: Hello, world! This is SpeechIt.
+        voice:
+          type: string
+          description: Voice name to use for synthesis.
+          enum:
+            - Kore
+            - Puck
+            - Aoede
+            - Charon
+            - Fenrir
+          example: Kore
+        style_prompt:
+          type: string
+          description: |
+            Optional free-text style instruction passed to the TTS model.
+            Examples: "speak slowly", "upbeat and energetic", "whisper softly".
+          maxLength: 500
+          example: Speak slowly and warmly.
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+          enum:
+            - input_too_long
+            - text_required
+            - invalid_voice
+            - rate_limit_exceeded
+            - upstream_error
+            - internal_server_error
+          example: rate_limit_exceeded
+        message:
+          type: string
+          description: Human-readable error description
+          example: Rate limit exceeded. Please wait 60 seconds before retrying.
+
+tags:
+  - name: voices
+    description: Voice management endpoints
+  - name: synthesis
+    description: Text-to-speech synthesis endpoints
