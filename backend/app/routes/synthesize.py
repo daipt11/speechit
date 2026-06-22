@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 from app.tts_client import synthesize, VOICES
 from slowapi import Limiter
@@ -42,7 +43,13 @@ class SynthesizeRequest(BaseModel):
 @router.post("/synthesize")
 @limiter.limit("10/minute")
 async def synthesize_speech(request: Request, body: SynthesizeRequest) -> Response:
-    audio_bytes = synthesize(body.text, body.voice, body.style_prompt)
+    try:
+        audio_bytes = synthesize(body.text, body.voice, body.style_prompt)
+    except Exception:
+        return JSONResponse(
+            status_code=502,
+            content={"error": "upstream_error", "message": "Gemini API returned an unexpected error. Please try again."},
+        )
     return Response(
         content=audio_bytes,
         media_type="audio/wav",

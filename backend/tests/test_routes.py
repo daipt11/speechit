@@ -19,6 +19,8 @@ def test_get_voices_returns_five():
     assert len(data["voices"]) == 5
 
 def test_synthesize_returns_wav():
+    from app.routes.synthesize import limiter as synth_limiter
+    synth_limiter.limiter.storage.reset()
     fake_audio = b"RIFF\x00\x00\x00\x00WAVEfmt "
     with patch("app.routes.synthesize.synthesize", return_value=fake_audio):
         resp = client.post("/api/synthesize", json={"text": "hello", "voice": "Kore"})

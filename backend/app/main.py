@@ -84,6 +84,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"error": error_code, "message": error_message}
     )
 
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"error": "internal_server_error", "message": "An unexpected error occurred"},
+    )
+
 # Routers
 app.include_router(voices.router, prefix="/api")
 app.include_router(synthesize.router, prefix="/api")

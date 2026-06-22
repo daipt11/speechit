@@ -26,8 +26,10 @@ def test_get_voices_returns_expected_list():
 
 
 from unittest.mock import patch
+from app.routes.synthesize import limiter as synth_limiter
 
 def test_post_synthesize_returns_200():
+    synth_limiter.limiter.storage.reset()
     fake_audio = b"RIFF\x00\x00\x00\x00WAVEfmt "
     with patch("app.routes.synthesize.synthesize", return_value=fake_audio):
         response = client.post("/api/synthesize", json={"text": "hello", "voice": "Kore"})
